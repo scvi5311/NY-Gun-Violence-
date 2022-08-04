@@ -1,0 +1,185 @@
+---
+title: "Exploratory Analysis of Gun Violence In New York"
+date: '2022-07-22'
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+## Libraries Used
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+
+```
+
+## Problem
+
+For this report, New York City shooting incidents which include information from the date, time, boroughs, victim identifiers and perpetrator identifiers will be analyzed. The analysis is interested in describing the where, when and who is committing this crime in an effort to provide clarity with the intent for actionable measures to be taken to reduce the violence happening. 
+
+## Data Description
+
+The data being analyzed was collected and provided by the city of New York and includes data from 2006 through 2021. 
+
+## Import Data
+
+The data is initially imported allowing it to be analyzed
+
+```{r get_data}
+url_in<-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+urls<-str_c(url_in)
+NY_gun<-read_csv(urls[1])
+NY_gun1<-na.omit(NY_gun)
+NY_gun1
+```
+
+## Tidy Data
+
+For Tidying and cleaning the data we chose to remove the values that belonged to variables PRECINCT,JURISDICTION_CODE,X_COORD_CD,Y_COORD_CD,Latitude,Longitude,Lon_Lat,INCIDENT_KEY, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE. 
+
+Since this is an exploratory analysis, the goal is to determine a pattern quickly that can then have new questions raised about it and evaluated further. The plan is to investigate which boroughs have the highest density of gun crime and then determine where and who in those areas is creating that crime.
+
+For now, the analysis is not interested in whether the gun violence resulted in a murder or not. We believe solving the underlying issue of gun violence as a whole will bring down the murder count.
+
+```{r tidy_data}
+# Removing the variables stated above
+NY_gun2<-select(NY_gun1,-c(PRECINCT,JURISDICTION_CODE,X_COORD_CD,Y_COORD_CD,Latitude,Longitude,Lon_Lat,INCIDENT_KEY, PERP_RACE, VIC_AGE_GROUP, VIC_SEX, VIC_RACE))
+
+# Changing the variables to either date type or factor type
+NY_gun2 <- NY_gun2 %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE), BORO = as.factor(BORO),LOCATION_DESC = 
+           as.factor(LOCATION_DESC), STATISTICAL_MURDER_FLAG = as.factor(STATISTICAL_MURDER_FLAG),
+            PERP_AGE_GROUP = as.factor(PERP_AGE_GROUP), PERP_SEX = as.factor(PERP_SEX))
+
+# Providing a summary of the modified data
+summary(NY_gun2)
+NY_gun2
+```
+### Discussion for missing data
+
+Given this is exploratory and the data set is significantly large with more then 25,000 rows and rows that contain missing data is significantly small, 19; rows that are missing data in any of their respective columns have been omitted. 
+
+## Analysis
+
+After reviewing the summary of the filtered data, it is noted that Brooklyn has the highest amount of gun crime between all the boroughs. As a result, Brooklyn will be the area where the analysis will be focused. 
+
+```{r analysis}
+
+NY_gun_BROOKLYN <- filter(NY_gun2, BORO == 'BROOKLYN')
+summary(NY_gun_BROOKLYN)
+
+#Adding additional data
+NY_gun_BROOKLYN$YEAR <- year(NY_gun_BROOKLYN$OCCUR_DATE)
+NY_gun_BROOKLYN$HOUR <- hour(NY_gun_BROOKLYN$OCCUR_TIME)
+NY_gun_BROOKLYN <- NY_gun_BROOKLYN %>%
+  mutate(YEAR = as.factor(YEAR))
+
+#Plotting occurrence time of gun violence to see times of peak gun violence
+BROOKLYN_PLOT_TIMES <- ggplot(NY_gun_BROOKLYN, aes(HOUR))+
+  geom_density(kernel="gaussian")+
+  labs(x = "Hour of Day", y = "Density of gun violence", title = "Figure 1: Density plot by Hour of the day")
+BROOKLYN_PLOT_TIMES
+```
+
+Reviewing Figure 1, over all the data in Brooklyn, there is a peak in the early morning and later evening for gun violence. Is this constant over all the years of data taken?
+
+```{r analysis1}
+# Creating a violin plot
+BROOKLYN_PLOT_TIMEvYEAR <- ggplot(NY_gun_BROOKLYN, aes(x = YEAR, y = HOUR))+
+  geom_violin(aes(color = YEAR, fill = YEAR))+
+  labs(x = "Year", y = "Hour", title = "Figure 2: Violin plot of Year vs Hour")
+BROOKLYN_PLOT_TIMEvYEAR
+```
+
+Figure 2, above, suggests the density plot over all years is accurate. We can see, for the most part, gun violence in the Brooklyn borough has been reported in the early morning hours and later evening hours. It is worth noting that the year 2019 has a more even distribution then the other years which could be attributed to different factors. Further analysis, with possibly more data from other sources needed, of that year would need to be done to identify why that occurred. 
+
+Next, the location of where the typical gun violence occurs is analysed again reviewing it over all years and by year
+
+```{r analysis2}
+# Removing data that does not make sense in the data set, potentially a typo or other error of some kind during entry
+NY_gun_BROOKLYN_filter <- filter(NY_gun_BROOKLYN, PERP_AGE_GROUP != '940', PERP_AGE_GROUP != '224', PERP_AGE_GROUP != '1020', PERP_AGE_GROUP 
+                                 !='UNKNOWN',PERP_SEX != 'U')
+# Creating plot to display sex vs perpetrator age
+BROOKLYN_PLOT_SEXvAGE <- ggplot(NY_gun_BROOKLYN_filter, aes(x = PERP_SEX, y = PERP_AGE_GROUP))+
+  geom_count(aes(color = PERP_AGE_GROUP))+
+  labs(x = "Sex", y = "Perp Age Group", title = "Figure 3: Sex vs Perp Age Group")
+BROOKLYN_PLOT_SEXvAGE
+
+# Creating plot to display Perpetrator age vs year
+BROOKLYN_PLOT_AGEvYEAR <- ggplot(NY_gun_BROOKLYN_filter, aes(x = YEAR, y = PERP_AGE_GROUP))+
+  geom_count(aes(color = YEAR, fill = YEAR))+
+  labs(x = "Year", y = "Perp Age Group", title = "Figure 4: Year vs Perp Age Group")
+BROOKLYN_PLOT_AGEvYEAR
+```
+
+Reviewing Figures 3 and 4, it is noticed mostly males between the ages of 18-44 are the perpetrators of the violence with that age range staying consistent over all years in the data set. 
+
+Next, we want to know where the crime is typically occurring. The data set provides a location description variable so we will use that to answer this question. We will again analyze whether this has stayed constant year over year. 
+
+```{r analysis3}
+# Create plot to show frequency of gun violence at each specified location
+BROOKLYN_PLOT_LOCFREQ <- ggplot(NY_gun_BROOKLYN, aes(LOCATION_DESC))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  labs(x = "Location", y = "Frequency of Shooting", title = "Figure 5: Location vs Frequency of Shootings")
+BROOKLYN_PLOT_LOCFREQ
+
+# Create plot to show year over year analysis 
+BROOKLYN_PLOT_LOCvYEAR <- ggplot(NY_gun_BROOKLYN_filter, aes(x = YEAR, y = LOCATION_DESC))+
+  geom_count(aes(color = YEAR, fill = YEAR))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  labs(x = "Year", y = "Location", title = "Figure 6: Year vs Location")
+BROOKLYN_PLOT_LOCvYEAR
+```
+
+Reviewing Figure 5 we notice a concentration of gun crime happening around apartment buildings and public housing. This again stays constant when looked at year over year (Figure 6) . 
+
+## Model
+
+The final step in the analysis was to create a model, it makes sense to evaluate whether there is a relation between quantities of shootings (incidents) and how many murders occurred by year. Being able to analysis this should support a decision to increase efforts to reduce gun violence as a whole as opposed to just targeting violent offenders.
+
+```{r model}
+#filtering for murders
+NY_gun_BROOKLYN_MURDER <- NY_gun_BROOKLYN %>%
+  filter(STATISTICAL_MURDER_FLAG == "TRUE")%>%
+  group_by(YEAR)
+NY_gun_BROOKLYN_MURDER
+
+#collecting murders by year
+table(NY_gun_BROOKLYN_MURDER$YEAR)
+Murder.freq<-table(NY_gun_BROOKLYN_MURDER$YEAR)
+
+#collecting all incidents by year
+table(NY_gun_BROOKLYN$YEAR)
+Incident.freq<-table(NY_gun_BROOKLYN$YEAR)
+
+#creating a linear model
+mod <- lm(formula = Murder.freq~Incident.freq, data = NY_gun_BROOKLYN)
+summary(mod)
+plot(mod)
+
+#storing murders by year and incidents by year in its own data frame
+linear_data<-data.frame(Murder.freq,Incident.freq)
+
+#create scatterplot of raw data and add line of best fit
+plot(linear_data$Freq.1, linear_data$Freq, col='red', main='Figure 7: Shootings per Year vs Murders per Year (Brooklyn)', xlab='Incident', ylab='Murder')
+abline(lm(Murder.freq~Incident.freq))
+
+```
+
+Reviewing the model created, the p value is below .005 supporting that the model is statistically significant. When the Residuals vs Fitted plot is looked at, we can conclude that a linear regression model is appropriate for the dataset since the redline does not deviate from the horizontal dotted line substantially. Figure 7 helps visualize the model that was created and supports that there is a linear relationship between incident rate and murder rate, as the amount of shootings goes up so does the amount of murders in Brooklyn.
+
+## Bias
+
+When reviewing the data set, we wanted to form a question that specifically did not require race to be evaluated in order for it to be answered. As it relates to gun violence, we did not believe to add significant value to an analysis because it has been shown that race does not necessarily correlate to violence and to include it in an analysis would only serve to introduce complexity. To state it a different way, there are concentrations of certain races, for various other factors, in these areas and as a result there will be a higher amount of those races committing these crimes. To mitigate this, race was removed from the data subset that would be analyzed. 
+
+## Discussion and Summary
+
+The analysis has successfully identified the highest concentration of gun crime in NYC and provided visualizations of when shootings occur by hour, where the occur most often and who, by sex and age, is committing the crimes. Additionally, the analysis provides a linear model to support that by reducing all gun violence, there would be a decrease in violent crime (murders). 
+
+The analysis should be used to develop actionable items that can be taken to reduce gun violence. These actions might include, but not be limited to, increasing police presence during hours where gun violence is more frequent and increasing funding to inner city programs that are focusing efforts around youth and their maturity from teenage years through young adult hood. 
+
+# Future Analysis
+
+Further steps should be taken to conduct the same analysis on the other boroughs in NYC. While it is expected the similar conclusions would be drawn, it should not be stated as fact without the analysis being completed. Additionally, this analysis should be completed on an annual basis as mitigation to the violence are rolled out to evaluate effectiveness of the efforts. Finally, the analysis should be continually updated and expanded as more data is included to ensure the right steps are being taken to curb the present issue of gun violence. 
